@@ -126,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                 engine.toggleOverlays(AppSettings.overlayOn)
                 toast("Overlays " + if (AppSettings.overlayOn) "ON" else "OFF")
             },
-            "Cache" to { engine.clearCache(); prefetcher.clearCache() }
+            "Cache" to { engine.clearCache(); prefetcher.clearCache() },
             "Split" to { toggleSplit() }
         ).forEach { (label, fn) -> row2.addView(barBtn(label, fn)) }
 
