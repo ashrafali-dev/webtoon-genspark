@@ -400,10 +400,12 @@ class Engine(
                 onLog("[$token] prompt ${prompt.length} chars → ${adapter.name}")
 
                 val ins = chatHelper.insert(botWv, adapter, prompt)
+                if (jobToken != token) return@launch
                 if (!ins.ok) { fail(token, "Chatbot editor insertion failed: ${ins.reason}"); return@launch }
                 _state.value = _state.value.copy(status = "Prompt inserted — sending…")
 
                 val resp = chatHelper.sendAndWait(botWv, adapter, timeoutMs = 150_000)
+                if (jobToken != token) return@launch
                 if (resp == null) { fail(token, "No chatbot response (timeout, not logged in, or send failed)"); return@launch }
                 onLog("[$token] response ${resp.length} chars")
 
@@ -431,7 +433,7 @@ class Engine(
                 )
                 onLog("[$token] insertion: $inserted items")
             } catch (e: kotlinx.coroutines.CancellationException) {
-                _state.value = _state.value.copy(phase = "cancelled")
+                if (jobToken == token) _state.value = _state.value.copy(phase = "cancelled")
             } catch (e: Exception) {
                 fail(token, "Translate failed: ${e.message}")
             }
