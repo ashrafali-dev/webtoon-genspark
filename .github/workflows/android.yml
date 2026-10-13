@@ -18,3 +18,10 @@ jobs:
           java-version: '17'
       - name: Test and assemble
         run: ./gradlew --no-daemon test assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: webtoon-translator-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
