@@ -82,14 +82,28 @@ class Engine(
 
     // ================================================================ scan
 
-    fun cancelAll() {
+    private fun detachActiveJobForCancellation(): Pair<String, Job?> {
         val old = jobToken
         jobToken = ""
         _state.value = _state.value.copy(phase = "cancelled", status = "Cancelled")
+        val previous = activeJob
+        activeJob = null
+        previous?.cancel()
+        return old to previous
+    }
+
+    fun cancelAll() {
+        val (old, previous) = detachActiveJobForCancellation()
         scope.launch {
-            activeJob?.cancelAndJoin()
+            previous?.cancelAndJoin()
             if (old.isNotEmpty()) onLog("[$old] cancelled")
         }
+    }
+
+    suspend fun cancelAllAndWait() {
+        val (old, previous) = detachActiveJobForCancellation()
+        previous?.cancelAndJoin()
+        if (old.isNotEmpty()) onLog("[$old] cancelled")
     }
 
     fun scanChapter() {
