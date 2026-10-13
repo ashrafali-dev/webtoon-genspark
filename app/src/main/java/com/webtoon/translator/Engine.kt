@@ -312,7 +312,7 @@ class Engine(
                 }
                 scope.launch {
                     delay(12_000)
-                    pendingFetches.remove(reqId)?.invoke("{\\"ok\\":false,\\"reason\\":\\"timeout\\"}")
+                    pendingFetches.remove(reqId)?.invoke("{\"ok\":false,\"reason\":\"timeout\"}")
                 }
             }
             val o = JSONObject(json)
