@@ -149,17 +149,20 @@ class ChapterTranslationCache(private val dir: File, private val maxEntries: Int
         fun normalizeUrl(value: String): String = try {
             val u = URL(value.substringBefore("#"))
             val scheme = u.protocol.lowercase(Locale.US)
-            if (scheme != "http" && scheme != "https") return value.substringBefore("#")
-            val host = u.host.lowercase(Locale.US)
-            val port = when {
-                u.port == -1 -> ""
-                scheme == "http" && u.port == 80 -> ""
-                scheme == "https" && u.port == 443 -> ""
-                else -> ":" + u.port
+            if (scheme != "http" && scheme != "https") {
+                value.substringBefore("#")
+            } else {
+                val host = u.host.lowercase(Locale.US)
+                val port = when {
+                    u.port == -1 -> ""
+                    scheme == "http" && u.port == 80 -> ""
+                    scheme == "https" && u.port == 443 -> ""
+                    else -> ":" + u.port
+                }
+                val path = u.path.ifBlank { "/" }
+                val normalizedPath = if (path.length > 1) path.trimEnd('/').ifBlank { "/" } else path
+                scheme + "://" + host + port + normalizedPath + (u.query?.let { "?" + it } ?: "")
             }
-            val path = u.path.ifBlank { "/" }
-            val normalizedPath = if (path.length > 1) path.trimEnd('/').ifBlank { "/" } else path
-            scheme + "://" + host + port + normalizedPath + (u.query?.let { "?" + it } ?: "")
         } catch (_: Exception) { value.substringBefore("#").trim() }
     }
 }
