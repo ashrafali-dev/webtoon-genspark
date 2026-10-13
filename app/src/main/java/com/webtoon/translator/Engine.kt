@@ -243,11 +243,8 @@ class Engine(
             } catch (_: Exception) { null }
         }
 
-        // Page context is required for blob URLs and can preserve site-specific session behaviour.
-        val pageBytes = fetchViaPage(wv, url)
-        if (pageBytes != null && pageBytes.isNotEmpty()) return pageBytes
-
-        // HTTP fallback: CORS does not apply to native requests. Carry the page's cookies and Referer.
+        // HTTP(S) first, matching Novel Studio. Native requests are not subject to browser CORS.
+        // Carry the live WebView's cookies, User-Agent and page Referer.
         if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
             onLog("fetch failed: unsupported image URL scheme")
             return null
@@ -291,6 +288,11 @@ class Engine(
                 connection?.disconnect()
             }
         }
+
+        // Browser-context fallback for sites requiring page fetch / service-worker handling.
+        val pageBytes = fetchViaPage(wv, url)
+        if (pageBytes != null && pageBytes.isNotEmpty()) return pageBytes
+        return null
     }
 
     private suspend fun fetchViaPage(wv: WebView, url: String): ByteArray? {
