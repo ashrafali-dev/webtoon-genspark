@@ -85,7 +85,7 @@ object WebScripts {
 (function(){
   if(!document.getElementById('wt-overlay-style')){
     var st=document.createElement('style');st.id='wt-overlay-style';
-    st.textContent='.wt-ovwrap{position:absolute;left:0;top:0;pointer-events:none;z-index:2147483000}.wt-ov{position:absolute;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;font-family:sans-serif;line-height:1.2;color:#111;text-shadow:0 0 2px white;pointer-events:none;}';
+    st.textContent='.wt-ovwrap{position:absolute;left:0;top:0;pointer-events:none;z-index:2147483000}.wt-ov{position:absolute;box-sizing:border-box;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;font-family:inherit;font-weight:inherit;font-style:inherit;line-height:1.15;color:var(--wt-text-color,#111);text-shadow:none;border-radius:1px;pointer-events:none;}';
     document.documentElement.appendChild(st);
   }
   return 'ok';
@@ -98,23 +98,23 @@ object WebScripts {
     var p=(typeof payload==='string')?JSON.parse(payload):payload,imgs=document.querySelectorAll('img'),img=null;
     for(var i=0;i<imgs.length;i++){var u=imgs[i].currentSrc||imgs[i].src||'';if(u===p.src){img=imgs[i];break;}}
     if(!img)return JSON.stringify({ok:false,reason:'image not found'});
-    var rect=img.getBoundingClientRect(),host=img.parentElement||document.body;
+    var rect=img.getBoundingClientRect();
     if(rect.width<5||rect.height<5)return JSON.stringify({ok:false,reason:'image not visible'});
-    var cs=getComputedStyle(host);if(cs.position==='static')host.style.position='relative';
+    // Use document coordinates on a body-level layer. Parent-relative offsets
+    // drift on Webtoon pages with transformed/scaled image containers.
     var id='wt-wrap-'+p.imageId.replace(/[^a-zA-Z0-9_-]/g,'_');
     var old=document.getElementById(id);if(old)old.remove();
     var wrap=document.createElement('div');wrap.id=id;wrap.className='wt-ovwrap';
-    var hostRect=host.getBoundingClientRect();
-    wrap.style.left=(rect.left-hostRect.left+host.scrollLeft)+'px';
-    wrap.style.top=(rect.top-hostRect.top+host.scrollTop)+'px';
+    wrap.style.left=(rect.left+window.scrollX)+'px';
+    wrap.style.top=(rect.top+window.scrollY)+'px';
     wrap.style.width=rect.width+'px';wrap.style.height=rect.height+'px';
     for(var k=0;k<p.regions.length;k++){
       var g=p.regions[k],box=document.createElement('div');box.className='wt-ov';
       box.style.left=(g.l*100)+'%';box.style.top=(g.t*100)+'%';box.style.width=(g.w*100)+'%';box.style.height=(g.h*100)+'%';
       box.style.fontSize=Math.max(8,Math.min(26,g.h*rect.height*.62))*p.fontScale+'px';
-      box.style.background='rgba(255,255,255,'+p.opacity+')';box.textContent=g.text;wrap.appendChild(box);
+      box.style.background='rgba(255,255,255,'+p.opacity+')';box.style.color='#111';box.textContent=g.text;wrap.appendChild(box);
     }
-    host.appendChild(wrap);return JSON.stringify({ok:true,created:p.regions.length});
+    (document.body||document.documentElement).appendChild(wrap);return JSON.stringify({ok:true,created:p.regions.length});
   }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
 })
 """
