@@ -11,7 +11,11 @@ import org.json.JSONObject
 
 /** Shared WebView configuration for both reader and chatbot panes. */
 @SuppressLint("SetJavaScriptEnabled")
-fun WebView.configureWebview(onProgress: (Int) -> Unit = {}, onPage: (String) -> Unit = {}) {
+fun WebView.configureWebview(
+    onProgress: (Int) -> Unit = {},
+    onPage: (String) -> Unit = {},
+    onFinished: (String) -> Unit = {}
+) {
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.databaseEnabled = true
@@ -27,7 +31,10 @@ fun WebView.configureWebview(onProgress: (Int) -> Unit = {}, onPage: (String) ->
     webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) { onPage(url ?: "") }
-        override fun onPageFinished(view: WebView?, url: String?) { onProgress(100) }
+        override fun onPageFinished(view: WebView?, url: String?) {
+            onProgress(100)
+            onFinished(url ?: view?.url.orEmpty())
+        }
     }
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView?, newProgress: Int) = onProgress(newProgress)
