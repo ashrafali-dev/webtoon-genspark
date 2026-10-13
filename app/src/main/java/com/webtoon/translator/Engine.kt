@@ -249,6 +249,11 @@ class Engine(
             onLog("fetch failed: unsupported image URL scheme")
             return null
         }
+        // WebView properties must only be read on the main thread. Snapshot them
+        // before entering Dispatchers.IO; otherwise every native request throws.
+        val requestContext = withContext(Dispatchers.Main) {
+            Triple(wv.settings.userAgentString, wv.url.orEmpty(), android.webkit.CookieManager.getInstance().getCookie(url))
+        }
         val nativeBytes = withContext(Dispatchers.IO) {
             var connection: java.net.HttpURLConnection? = null
             try {
@@ -257,11 +262,11 @@ class Engine(
                     readTimeout = 25_000
                     instanceFollowRedirects = true
                     requestMethod = "GET"
-                    setRequestProperty("User-Agent", wv.settings.userAgentString)
+                    setRequestProperty("User-Agent", requestContext.first)
                     setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-                    val referer = wv.url.orEmpty()
+                    val referer = requestContext.second
                     if (referer.isNotBlank()) setRequestProperty("Referer", referer)
-                    val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
+                    val cookie = requestContext.third
                     if (!cookie.isNullOrBlank()) setRequestProperty("Cookie", cookie)
                 }
                 val code = connection.responseCode
