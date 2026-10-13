@@ -445,7 +445,7 @@ class Engine(
     suspend fun eval(wv: WebView, script: String, arg: String? = null): String =
         withContext(Dispatchers.Main) {
             suspendCoroutine { cont ->
-                val js = "((" + script + ")" + (arg?.let { JSONObject.quote(it) } ?: "") + ");"
+                val js = if (arg == null) script else "(" + script + ")(" + JSONObject.quote(arg) + ")"
                 wv.evaluateJavascript(js) { result -> cont.resume(result ?: "") }
             }
         }
