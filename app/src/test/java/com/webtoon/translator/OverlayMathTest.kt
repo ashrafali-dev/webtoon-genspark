@@ -7,7 +7,7 @@ import org.junit.Test
 class OverlayMathTest {
     @Test fun simpleRatioMapping() {
         val m=OverlayMath.map(100f,200f,50f,25f,800,1200,400f,600f)
-        assertEquals(.125f,m.leftRatio,1e-5f); assertEquals(200f/1200f,m.topRatio,1e-5f)
+        assertEquals(0.125f,m.leftRatio,1e-5f); assertEquals(200f/1200f,m.topRatio,1e-5f)
         assertEquals(50f/800f,m.widthRatio,1e-5f); assertEquals(25f/1200f,m.heightRatio,1e-5f)
     }
     @Test fun renderedSizeDoesNotAffectRatios() {
@@ -25,7 +25,7 @@ class OverlayMathTest {
         assertTrue(m.leftRatio+m.widthRatio<=1.0001f); assertTrue(m.topRatio+m.heightRatio<=1.0001f)
     }
     @Test fun fontAndPaddingScaleSanely() {
-        assertTrue(OverlayMath.fontPx(.2f,1000f)>OverlayMath.fontPx(.02f,1000f))
-        assertTrue(OverlayMath.padPx(.2f,1000f)<=14f)
+        assertTrue(OverlayMath.fontPx(0.2f,1000f)>OverlayMath.fontPx(0.02f,1000f))
+        assertTrue(OverlayMath.padPx(0.2f,1000f)<=14f)
     }
 }
