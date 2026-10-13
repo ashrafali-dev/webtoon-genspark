@@ -249,7 +249,7 @@ class Engine(
             onLog("fetch failed: unsupported image URL scheme")
             return null
         }
-        return withContext(Dispatchers.IO) {
+        val nativeBytes = withContext(Dispatchers.IO) {
             var connection: java.net.HttpURLConnection? = null
             try {
                 connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
@@ -289,7 +289,10 @@ class Engine(
             }
         }
 
+        if (nativeBytes != null && nativeBytes.isNotEmpty()) return nativeBytes
+
         // Browser-context fallback for sites requiring page fetch / service-worker handling.
+        // This must run after the native request fails; do not return early above.
         val pageBytes = fetchViaPage(wv, url)
         if (pageBytes != null && pageBytes.isNotEmpty()) return pageBytes
         return null
