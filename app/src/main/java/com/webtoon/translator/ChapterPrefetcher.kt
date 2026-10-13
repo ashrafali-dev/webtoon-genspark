@@ -104,7 +104,7 @@ class ChapterPrefetcher(
         if (oldJob?.isActive == true) {
             targetUrl = ""
             oldJob.cancelAndJoin()
-            prefetchEngine.cancelAll()
+            prefetchEngine.cancelAllAndWait()
         }
         targetUrl = normalized
         onLog("Prefetch queued: " + normalized)
