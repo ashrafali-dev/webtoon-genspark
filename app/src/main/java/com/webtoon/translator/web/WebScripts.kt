@@ -39,6 +39,37 @@ object WebScripts {
 })();
 """
 
+    /** Find a real next-episode link; never fabricate or increment episode IDs. */
+    const val FIND_NEXT_CHAPTER_URL = """
+(function(){
+  try{
+    var current=new URL(location.href), best='', bestScore=-1;
+    var links=Array.prototype.slice.call(document.querySelectorAll('a[href],link[rel="next"][href]'));
+    var now=Number(current.searchParams.get('episode_no')||current.searchParams.get('episode')||'0');
+    var title=current.searchParams.get('title_no')||'';
+    for(var i=0;i<links.length;i++){
+      var a=links[i], raw=a.href||a.getAttribute('href'); if(!raw)continue;
+      var u; try{u=new URL(raw,location.href);}catch(e){continue;}
+      if((u.protocol!=='http:'&&u.protocol!=='https:')||u.href.split('#')[0]===current.href.split('#')[0])continue;
+      var rel=(a.getAttribute('rel')||'').toLowerCase();
+      var label=((a.innerText||a.textContent||'')+' '+(a.getAttribute('aria-label')||'')+' '+(a.title||'')+' '+(typeof a.className==='string'?a.className:'')).toLowerCase();
+      var score=-1;
+      if(rel.split(' ').indexOf('next')>=0)score=120;
+      if(label.indexOf('next')>=0||label.indexOf('continue reading')>=0||
+         label.indexOf('下一话')>=0||label.indexOf('下一章')>=0||label.indexOf('下話')>=0||
+         label.indexOf('次の話')>=0||label.indexOf('다음화')>=0||label.indexOf('다음 회차')>=0)score=Math.max(score,90);
+      var ep=Number(u.searchParams.get('episode_no')||u.searchParams.get('episode')||'0');
+      var title2=u.searchParams.get('title_no')||'';
+      if(now>0&&ep>now&&(!title||!title2||title===title2)){
+        score=Math.max(score,(u.pathname===current.pathname?80:65)-Math.min(ep-now,30));
+      }
+      if(score>bestScore){bestScore=score;best=u.href;}
+    }
+    return JSON.stringify({url:bestScore>=0?best:''});
+  }catch(e){return JSON.stringify({url:'',reason:String(e)});}
+})();
+"""
+
     const val SCROLL_STEP = """
 (function(step){
   var max=document.documentElement.scrollHeight||document.body.scrollHeight;
