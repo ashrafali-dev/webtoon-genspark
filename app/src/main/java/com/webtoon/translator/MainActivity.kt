@@ -241,6 +241,7 @@ class MainActivity : AppCompatActivity() {
         }
         readerFrame.addView(readerWv)
         engine.bridgeInstance().host = readerWv
+        readerWv.addJavascriptInterface(engine.bridgeInstance(), "WebToonBridge")
 
         botWv = WebView(this).apply {
             configureWebview(onProgress = {}, onPage = { u -> log("chatbot: $u") })
