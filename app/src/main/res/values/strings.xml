@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Webtoon Translator</string>
+    <string name="url_hint">https://site.com/chapter-url</string>
+    <string name="go">Go</string>
+    <string name="scan">Scan Chapter</string>
+    <string name="translate">Translate</string>
+    <string name="stop">Stop</string>
+</resources>
