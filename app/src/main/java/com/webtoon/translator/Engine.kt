@@ -446,9 +446,21 @@ class Engine(
         } else {
             withContext(Dispatchers.Main) { eval(reader, WebScripts.INJECT_OVERLAY_LAYER) }
             var total = 0
-            val byImage = items.groupBy { it.imageId }
+            // Models sometimes omit imageId or echo the fallback "novel".
+            // Region IDs are the reliable key: resolve each translation to the
+            // scanned image that actually owns that region before grouping.
+            val scannedImages = _state.value.images
+            val byImage = items.mapNotNull { item ->
+                val owner = scannedImages.firstOrNull { img ->
+                    img.regions.any { region -> region.regionId == item.regionId }
+                }
+                if (owner == null) {
+                    onLog("overlay skip: no image owns region ${item.regionId} (imageId=${item.imageId})")
+                    null
+                } else owner.imageId to item
+            }.groupBy({ it.first }, { it.second })
             for ((imageId, group) in byImage) {
-                val img = _state.value.images.firstOrNull { it.imageId == imageId } ?: continue
+                val img = scannedImages.firstOrNull { it.imageId == imageId } ?: continue
                 val regionsPayload = group.mapNotNull { item ->
                     val region = img.regions.firstOrNull { it.regionId == item.regionId } ?: return@mapNotNull null
                     val mapped = com.webtoon.translator.core.OverlayMath.map(
