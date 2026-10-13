@@ -66,7 +66,7 @@ object WebScripts {
     const val APPLY_NOVEL = """
 (function(payload){
   try{
-    var p=JSON.parse(payload);
+    var p=(typeof payload==='string')?JSON.parse(payload):payload;
     function txt(e){return (e.textContent||'').replace(/\\s+/g,' ').trim();}
     var sels='article,main,#content,.entry-content,.chapter-content,.reading-content,div[class*="chapter" i],div[class*="content" i]';
     var cs=Array.prototype.slice.call(document.querySelectorAll(sels)),best=null,scoreBest=0;
@@ -95,7 +95,7 @@ object WebScripts {
     const val APPLY_OVERLAYS = """
 (function(payload){
   try{
-    var p=JSON.parse(payload),imgs=document.querySelectorAll('img'),img=null;
+    var p=(typeof payload==='string')?JSON.parse(payload):payload,imgs=document.querySelectorAll('img'),img=null;
     for(var i=0;i<imgs.length;i++){var u=imgs[i].currentSrc||imgs[i].src||'';if(u===p.src){img=imgs[i];break;}}
     if(!img)return JSON.stringify({ok:false,reason:'image not found'});
     var rect=img.getBoundingClientRect(),host=img.parentElement||document.body;
