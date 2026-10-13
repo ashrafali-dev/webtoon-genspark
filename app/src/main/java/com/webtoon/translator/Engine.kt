@@ -446,7 +446,16 @@ class Engine(
         withContext(Dispatchers.Main) {
             suspendCoroutine { cont ->
                 val js = if (arg == null) script else "(" + script + ")(" + JSONObject.quote(arg) + ")"
-                wv.evaluateJavascript(js) { result -> cont.resume(result ?: "") }
+                wv.evaluateJavascript(js) { raw ->
+                    val value = raw ?: ""
+                    // evaluateJavascript JSON-encodes string results; unwrap that layer
+                    // before parsing the JSON returned by page-side helper scripts.
+                    val decoded = try {
+                        val v = org.json.JSONTokener(value).nextValue()
+                        if (v is String) v else value
+                    } catch (_: Exception) { value }
+                    cont.resume(decoded)
+                }
             }
         }
 
