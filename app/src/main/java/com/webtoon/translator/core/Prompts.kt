@@ -53,17 +53,21 @@ object Prompts {
         return null
     }
 
-    private fun parseJsonObject(candidate: String): List<TranslationItem>? = try {
-        val arr = JSONObject(candidate).optJSONArray("translations") ?: return null
-        val out = ArrayList<TranslationItem>()
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            val rid = o.optString("regionId", o.optString("id", ""))
-            val txt = o.optString("translatedText", o.optString("text", o.optString("t", "")))
-            if (rid.isNotBlank() && txt.isNotBlank()) out.add(TranslationItem(o.optString("imageId", "novel"), rid, txt))
-        }
-        out.takeIf { it.isNotEmpty() }
-    } catch (_: Exception) { null }
+    private fun parseJsonObject(candidate: String): List<TranslationItem>? {
+        return try {
+            val arr = JSONObject(candidate).optJSONArray("translations") ?: return null
+            val out = ArrayList<TranslationItem>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val rid = o.optString("regionId", o.optString("id", ""))
+                val txt = o.optString("translatedText", o.optString("text", o.optString("t", "")))
+                if (rid.isNotBlank() && txt.isNotBlank()) {
+                    out.add(TranslationItem(o.optString("imageId", "novel"), rid, txt))
+                }
+            }
+            out.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) { null }
+    }
 
     fun parseMarkers(raw: String): List<TranslationItem> {
         val out = ArrayList<TranslationItem>()
