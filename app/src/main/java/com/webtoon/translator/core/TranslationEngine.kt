@@ -80,7 +80,7 @@ class TranslationEngine(private val baseUrl: String, private val apiKey: String,
                 val content = JSONObject(text)
                     .getJSONArray("candidates").getJSONObject(0)
                     .getJSONObject("content").getJSONArray("parts")
-                    .getJSONObject(0).getString("content")
+                    .getJSONObject(0).getString("text")
                 Result.success(content)
             }
         } catch (e: Exception) {
