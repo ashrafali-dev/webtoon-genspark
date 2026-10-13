@@ -24,7 +24,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -54,7 +56,8 @@ data class JobUiState(
 class Engine(
     private val readerWv: () -> WebView?,
     private val scope: CoroutineScope,
-    private val onLog: (String) -> Unit
+    private val onLog: (String) -> Unit,
+    private val chatbotMutex: Mutex = Mutex()
 ) {
     private val _state = MutableStateFlow(JobUiState())
     val state: StateFlow<JobUiState> = _state
@@ -63,6 +66,8 @@ class Engine(
     @Volatile private var jobToken: String = ""
 
     private var cacheDir: File = File("/tmp/wt")
+    private var lastTranslations: List<TranslationItem> = emptyList()
+    private var lastMatchComplete: Boolean = false
     fun setCacheDir(path: File) { cacheDir = path }
 
     private val pendingFetches = ConcurrentHashMap<String, (String) -> Unit>()
@@ -91,8 +96,11 @@ class Engine(
         val jobId = "job-" + System.currentTimeMillis().toString(36)
         jobToken = jobId
         val token = jobId
+        lastTranslations = emptyList()
+        lastMatchComplete = false
+        novelItems = emptyList()
+        _state.value = JobUiState(jobId = jobId, phase = "scanning", status = "Starting scan…")
         activeJob = scope.launch {
-            _state.value = JobUiState(jobId = jobId, phase = "scanning", status = "Starting scan…")
             onLog("[$jobId] scan started")
             try {
                 val wv = readerWv() ?: run { fail(token, "Reader webview not ready"); return@launch }
@@ -369,6 +377,8 @@ class Engine(
         val token = jobToken
         if (token.isEmpty()) { onLog("No active scan — press Scan Chapter first"); _state.value = _state.value.copy(phase = "failed", status = "No active scan"); return }
         activeJob = scope.launch {
+            chatbotMutex.withLock {
+            if (jobToken != token) return@withLock
             _state.value = _state.value.copy(phase = "translating", status = "Building prompt…")
             try {
                 val prompt = buildPromptForChapter()
@@ -391,6 +401,8 @@ class Engine(
                     return@launch
                 }
                 if (match.missingIds.isNotEmpty()) onLog("[$token] warning: ${match.missingIds.size} IDs missing from response")
+                lastTranslations = match.matched.toList()
+                lastMatchComplete = match.complete
 
                 _state.value = _state.value.copy(
                     phase = "inserting",
@@ -408,6 +420,61 @@ class Engine(
                 _state.value = _state.value.copy(phase = "cancelled")
             } catch (e: Exception) {
                 fail(token, "Translate failed: ${e.message}")
+            }
+            }
+        }
+    }
+
+    /** Export only a fully matched translation; incomplete chatbot responses are not cached. */
+    fun exportPreparedChapter(chapterUrl: String, botId: String): PreparedChapter? {
+        val st = _state.value
+        if (st.phase != "done" || !lastMatchComplete || lastTranslations.isEmpty() ||
+            st.translationsTotal == 0 || lastTranslations.size != st.translationsTotal) return null
+        return PreparedChapter(
+            url = ChapterTranslationCache.normalizeUrl(chapterUrl), createdAt = System.currentTimeMillis(),
+            sourceLang = AppSettings.sourceLang, targetLang = AppSettings.targetLang,
+            ocrScript = AppSettings.ocrScript, promptVersion = Prompts.PROMPT_VERSION, botId = botId,
+            novelMode = st.novelMode,
+            paragraphs = novelItems.map { PreparedParagraph(it.first, it.second) },
+            images = st.images.map { it.copy(regions = it.regions.toMutableList()) },
+            translations = lastTranslations.toList()
+        )
+    }
+
+    /** Apply a prepared chapter without running scan/OCR/chatbot again. */
+    fun applyPreparedChapter(prepared: PreparedChapter) {
+        activeJob?.cancel()
+        val token = "cached-" + System.currentTimeMillis().toString(36)
+        jobToken = token
+        lastTranslations = prepared.translations.toList()
+        lastMatchComplete = true
+        novelItems = prepared.paragraphs.map { it.index to it.text }
+        val images = prepared.images.map { it.copy(regions = it.regions.toMutableList()) }
+        _state.value = JobUiState(
+            jobId = token, phase = "inserting", status = "Applying prepared chapter translation…",
+            images = images, novelParas = novelItems.size, novelMode = prepared.novelMode,
+            translationsReady = prepared.translations.size, translationsTotal = prepared.translations.size
+        )
+        activeJob = scope.launch {
+            try {
+                val reader = readerWv() ?: run { fail(token, "Reader webview not ready"); return@launch }
+                val liveUrl = withContext(Dispatchers.Main) { ChapterTranslationCache.normalizeUrl(reader.url.orEmpty()) }
+                if (liveUrl != prepared.url) {
+                    fail(token, "Prepared chapter URL no longer matches the reader")
+                    return@launch
+                }
+                val inserted = insertTranslations(reader, prepared.translations)
+                if (jobToken != token) return@launch
+                _state.value = _state.value.copy(
+                    phase = "done", status = "Prepared translation applied: $inserted/${prepared.translations.size}",
+                    insertedCount = inserted
+                )
+                onLog("[$token] applied prepared translation: $inserted/${prepared.translations.size}")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                if (jobToken == token) _state.value = _state.value.copy(phase = "cancelled", status = "Cancelled")
+                throw e
+            } catch (e: Exception) {
+                fail(token, "Could not apply prepared translation: ${e.message}")
             }
         }
     }
