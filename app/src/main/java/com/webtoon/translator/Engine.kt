@@ -224,30 +224,106 @@ class Engine(
         }
     }
 
-    /** Fetches image bytes through the page context (blob:/data:/cookies safe). */
+    /**
+     * Fetch image bytes using the live page first (supports blob/data URLs and session cookies),
+     * then fall back to native HTTP with the WebView cookie jar and page Referer. This mirrors
+     * Novel Studio's proven fetch strategy and avoids CORS-only failures on image CDNs.
+     */
     private suspend fun fetchImageBytes(wv: WebView, url: String): ByteArray? {
-        val reqId = "f" + System.nanoTime().toString(36)
-        val json = suspendCoroutine<String> { cont ->
-            var resumed = false
-            pendingFetches[reqId] = { r ->
-                if (!resumed) { resumed = true; cont.resume(r) }
-            }
-            wv.post {
-                wv.evaluateJavascript(
-                    "WebToonBridge.fetch(" + JSONObject.quote(reqId) + "," + JSONObject.quote(url) + ");",
-                    null
-                )
-            }
-            scope.launch {
-                delay(30_000)
-                pendingFetches.remove(reqId)?.invoke("{\"ok\":false,\"reason\":\"timeout\"}")
+        // data: URLs are self-contained and do not need network access.
+        if (url.startsWith("data:", ignoreCase = true)) {
+            return try {
+                val comma = url.indexOf(',')
+                if (comma < 0) null else {
+                    val head = url.substring(0, comma)
+                    val body = url.substring(comma + 1)
+                    if (head.contains(";base64", ignoreCase = true)) Base64.decode(body, Base64.DEFAULT)
+                    else java.net.URLDecoder.decode(body, "UTF-8").toByteArray(Charsets.ISO_8859_1)
+                }
+            } catch (_: Exception) { null }
+        }
+
+        // Page context is required for blob URLs and can preserve site-specific session behaviour.
+        val pageBytes = fetchViaPage(wv, url)
+        if (pageBytes != null && pageBytes.isNotEmpty()) return pageBytes
+
+        // HTTP fallback: CORS does not apply to native requests. Carry the page's cookies and Referer.
+        if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
+            onLog("fetch failed: unsupported image URL scheme")
+            return null
+        }
+        return withContext(Dispatchers.IO) {
+            var connection: java.net.HttpURLConnection? = null
+            try {
+                connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 25_000
+                    instanceFollowRedirects = true
+                    requestMethod = "GET"
+                    setRequestProperty("User-Agent", wv.settings.userAgentString)
+                    setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    val referer = wv.url.orEmpty()
+                    if (referer.isNotBlank()) setRequestProperty("Referer", referer)
+                    val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
+                    if (!cookie.isNullOrBlank()) setRequestProperty("Cookie", cookie)
+                }
+                val code = connection.responseCode
+                if (code !in 200..299) throw java.io.IOException("HTTP $code")
+                val maxBytes = 25L * 1024L * 1024L
+                if (connection.contentLengthLong > maxBytes) throw java.io.IOException("image too large")
+                connection.inputStream.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(16 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        total += n
+                        if (total > maxBytes) throw java.io.IOException("image too large")
+                        output.write(buffer, 0, n)
+                    }
+                    output.toByteArray().takeIf { it.isNotEmpty() }
+                }
+            } catch (e: Exception) {
+                onLog("native image fetch failed: ${e.message ?: e.javaClass.simpleName}")
+                null
+            } finally {
+                connection?.disconnect()
             }
         }
+    }
+
+    private suspend fun fetchViaPage(wv: WebView, url: String): ByteArray? {
+        // blob: URLs cannot be opened by HttpURLConnection; let the page resolve them.
+        val reqId = "f" + System.nanoTime().toString(36)
         return try {
+            val json = suspendCoroutine<String> { cont ->
+                var resumed = false
+                pendingFetches[reqId] = { r ->
+                    if (!resumed) { resumed = true; cont.resume(r) }
+                }
+                wv.post {
+                    wv.evaluateJavascript(
+                        "WebToonBridge.fetch(" + JSONObject.quote(reqId) + "," + JSONObject.quote(url) + ");",
+                        null
+                    )
+                }
+                scope.launch {
+                    delay(12_000)
+                    pendingFetches.remove(reqId)?.invoke("{\\"ok\\":false,\\"reason\\":\\"timeout\\"}")
+                }
+            }
             val o = JSONObject(json)
-            if (!o.optBoolean("ok")) { onLog("fetch fail: ${o.optString("reason")}"); null }
-            else Base64.decode(o.getString("base64"), Base64.DEFAULT)
-        } catch (_: Exception) { null }
+            if (!o.optBoolean("ok")) {
+                onLog("page image fetch failed: ${o.optString("reason")}")
+                null
+            } else Base64.decode(o.getString("base64"), Base64.DEFAULT)
+        } catch (e: Exception) {
+            onLog("page image fetch failed: ${e.message ?: e.javaClass.simpleName}")
+            null
+        } finally {
+            pendingFetches.remove(reqId)
+        }
     }
 
     // ================================================================ novel mode
