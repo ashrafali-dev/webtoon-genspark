@@ -17,7 +17,7 @@ object AppSettings {
     private lateinit var secure: SharedPreferences
 
     fun init(context: Context) {
-        if (AppSettings::prefs.isInitialized) return
+        if (this::prefs.isInitialized) return
         prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val mk = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         secure = EncryptedSharedPreferences.create(
