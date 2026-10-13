@@ -531,7 +531,15 @@ class Engine(
     suspend fun eval(wv: WebView, script: String, arg: String? = null): String =
         withContext(Dispatchers.Main) {
             suspendCoroutine { cont ->
-                val js = if (arg == null) script else "(" + script + ")(" + JSONObject.quote(arg) + ")"
+                // JSON payloads (ChatbotHelper adapters) must be passed as objects,
+                // not quoted strings. Primitive arguments such as "700" remain strings.
+                val trimmedArg = arg?.trim()
+                val jsArg = if (trimmedArg != null &&
+                    ((trimmedArg.startsWith("{") && trimmedArg.endsWith("}")) ||
+                     (trimmedArg.startsWith("[") && trimmedArg.endsWith("]")))) {
+                    trimmedArg
+                } else if (arg != null) JSONObject.quote(arg) else null
+                val js = if (jsArg == null) script else "(" + script + ")(" + jsArg + ")"
                 wv.evaluateJavascript(js) { raw ->
                     val value = raw ?: ""
                     // evaluateJavascript JSON-encodes string results; unwrap that layer
