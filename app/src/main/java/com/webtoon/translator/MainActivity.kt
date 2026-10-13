@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.AutoCompleteTextView
+import android.widget.FrameLayout
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -23,6 +24,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * Single-activity app:
@@ -34,6 +36,10 @@ import java.util.Locale
 class MainActivity : AppCompatActivity() {
 
     private lateinit var engine: Engine
+    private lateinit var prefetchEngine: Engine
+    private lateinit var prefetcher: ChapterPrefetcher
+    private lateinit var prefetchWv: WebView
+    private val chatbotMutex = Mutex()
     private lateinit var chatHelper: ChatbotHelper
 
     private lateinit var urlInput: EditText
@@ -46,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var botSpinner: AutoCompleteTextView
     private lateinit var bottomPane: LinearLayout
     private lateinit var botContainer: LinearLayout
-    private lateinit var readerFrame: LinearLayout
+    private lateinit var readerFrame: FrameLayout
     private lateinit var settingsView: View
     private val tabScrolls = ArrayList<ScrollView>()
     private var splitOpen = true
@@ -55,7 +61,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppSettings.init(this)
-        engine = Engine(readerWv = { readerWv }, scope = lifecycleScope, onLog = ::log)
+        engine = Engine(readerWv = { readerWv }, scope = lifecycleScope, onLog = ::log, chatbotMutex = chatbotMutex)
         engine.setCacheDir(File(cacheDir, "engine"))
         chatHelper = ChatbotHelper { wv, script, arg -> engine.eval(wv, script, arg) }
         setContentView(buildUi())
@@ -120,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                 engine.toggleOverlays(AppSettings.overlayOn)
                 toast("Overlays " + if (AppSettings.overlayOn) "ON" else "OFF")
             },
-            "Cache" to { engine.clearCache() },
+            "Cache" to { engine.clearCache(); prefetcher.clearCache() }
             "Split" to { toggleSplit() }
         ).forEach { (label, fn) -> row2.addView(barBtn(label, fn)) }
 
@@ -131,7 +137,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 12f
         }
 
-        readerFrame = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        readerFrame = FrameLayout(this)
 
         // bottom split pane
         bottomPane = LinearLayout(this).apply {
@@ -237,9 +243,15 @@ class MainActivity : AppCompatActivity() {
         readerWv = WebView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            configureWebview(onProgress = { p -> runOnUiThread { this@MainActivity.progress.progress = p } })
+            configureWebview(
+                onProgress = { p -> runOnUiThread { this@MainActivity.progress.progress = p } },
+                onPage = { u -> if (::prefetcher.isInitialized) prefetcher.onCurrentPageStarted(u) },
+                onFinished = { u -> if (::prefetcher.isInitialized) prefetcher.onCurrentPageFinished(u) }
+            )
         }
-        readerFrame.addView(readerWv)
+        readerFrame.addView(readerWv, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
         engine.bridgeInstance().host = readerWv
         readerWv.addJavascriptInterface(engine.bridgeInstance(), "WebToonBridge")
 
@@ -250,6 +262,33 @@ class MainActivity : AppCompatActivity() {
         }
         botContainer.addView(botWv)
         loadBot()
+
+        // Full-size off-screen WebView preserves the site's responsive layout while preparing ahead.
+        prefetchWv = WebView(this).apply {
+            configureWebview(
+                onProgress = {},
+                onFinished = { u -> if (::prefetcher.isInitialized) prefetcher.onPrefetchPageFinished(u) }
+            )
+            alpha = 0f
+            translationX = dp(5000).toFloat()
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            isFocusable = false
+            isFocusableInTouchMode = false
+        }
+        readerFrame.addView(prefetchWv, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        prefetchEngine = Engine(
+            readerWv = { prefetchWv }, scope = lifecycleScope,
+            onLog = { log("[prefetch] " + it) }, chatbotMutex = chatbotMutex
+        )
+        prefetchEngine.setCacheDir(File(cacheDir, "prefetch-engine"))
+        prefetchEngine.bridgeInstance().host = prefetchWv
+        prefetchWv.addJavascriptInterface(prefetchEngine.bridgeInstance(), "WebToonBridge")
+        prefetcher = ChapterPrefetcher(
+            readerWv, prefetchWv, engine, prefetchEngine, botWv, chatHelper,
+            lifecycleScope, File(cacheDir, "prefetch"), ::log
+        )
     }
 
     private fun loadBot() {
@@ -338,8 +377,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (::prefetcher.isInitialized) prefetcher.shutdown()
+        if (::prefetchEngine.isInitialized) prefetchEngine.shutdown()
         engine.shutdown()
         readerWv.destroy()
+        if (::prefetchWv.isInitialized) prefetchWv.destroy()
         botWv.destroy()
         super.onDestroy()
     }
