@@ -37,7 +37,7 @@ class TranslationCache(private val dir: File) {
 object ContentHash {
     fun of(texts: List<String>): String {
         val md = MessageDigest.getInstance("SHA-256")
-        val h = md.digest(texts.joinToString("\f").toByteArray())
+        val h = md.digest(texts.joinToString("\u000C").toByteArray())
         return h.take(16).joinToString("") { "%02x".format(it) }
     }
 }
